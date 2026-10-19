@@ -1,4 +1,4 @@
-# The exact replay code — commit `f4ebac0`
+# The exact replay code, commit `f4ebac0`
 
 This directory is a **byte-identical snapshot** of the code that produced `evaluation.csv`. It is not
 a cleaned-up version and not a re-implementation: `replay/run.ts` and `src/*.ts` here are the files
@@ -59,7 +59,7 @@ python -c "import json;d=json.load(open('replay/meta.json'));print(d['csv']['sha
 - **A warm cache makes reruns fast and deterministic.** Every response is cached by
   `(method, params)` including the block tag, so a second run over the same window replays from disk
   and produces the same bytes. That is how the hash is reproducible at all.
-- **The run refuses to start from a dirty working tree** (working rule 11 — evidence must be tied to
+- **The run refuses to start from a dirty working tree** (working rule 11: evidence must be tied to
   a revision). The `.gitignore` here covers `replay/out/`, `replay/cache/`, `replay/meta.json` and
   `node_modules/`, so a run does not dirty the repository. If you edit anything, commit or stash first.
 - **Do not delete or edit `replay/cache/` casually.** It is regenerable from the chain, but rebuilding
@@ -69,15 +69,15 @@ python -c "import json;d=json.load(open('replay/meta.json'));print(d['csv']['sha
 
 At the end, `run.ts` asserts 8,640 rows per token, 8,640 distinct sample times, zero duplicate
 (token, sample-time) pairs, all 35 tokens present, and `errorsSwallowed === 0`. It exits non-zero if
-any of those fail — a malformed CSV cannot pass as a finished run.
+any of those fail. A malformed CSV cannot pass as a finished run.
 
 ## What produced the decision
 
-- `replay/out/evaluation.csv` — the rows
-- `replay/meta.json` — universe, window, block range, providers, code commit, thresholds, CSV hash,
+- `replay/out/evaluation.csv`: the rows
+- `replay/meta.json`: universe, window, block range, providers, code commit, thresholds, CSV hash,
   invariants
-- `evidence/preregistration.json` — the thresholds and definitions, frozen before the run
-- `report/report.md` — the scoring and the decision
+- `evidence/preregistration.json`: the thresholds and definitions, frozen before the run
+- `report/report.md`: the scoring and the decision
 
 The scoring scripts (`score-evaluation.py`, `evaluation-jumps.py`, `spot-check.py`) live in the
 private working repository, not here: they read this CSV and do not affect how it was produced.

@@ -16,8 +16,8 @@ import { check } from "stock-token-check";
 const r = await check("AAPL", "trade");
 // r.verdict.safe            -> false
 // r.verdict.blockingCodes   -> ["MARKET_CLOSED"]
-// r.verdict.reasons          -> [{ code, severity, detail }, ...]
-// r.inputs                   -> the raw values read at the block
+// r.verdict.reasons         -> [{ code, severity, detail }, ...]
+// r.inputs                  -> the raw values read at the block
 ```
 
 Or as a local agent tool (MCP over stdio):
@@ -45,7 +45,7 @@ public RPC endpoints. There is no hosted service, no payment, and no signing.
 |---|---|
 | `MARKET_CLOSED` | US equity market closed (weekend/holiday). Blocks a trade, warns for a valuation. |
 | `SEQUENCER_STALE` | L2 block production has stalled. Inferred from blocks, because no Chainlink sequencer feed exists on this chain. |
-| `ORACLE_PAUSED` | `oraclePaused()` is true — the feed is frozen at its last good value. |
+| `ORACLE_PAUSED` | `oraclePaused()` is true, so the feed is frozen at its last good value. |
 | `TOKEN_PAUSED` / `REGISTRY_PAUSED` | Transfers are halted for this token, or issuer-wide. |
 | `MULTIPLIER_PENDING` / `MULTIPLIER_PENDING_SOON` | A staged `uiMultiplier` change is close enough to matter. |
 | `FEED_STALE_OPEN` | Open session, and the feed is older than `heartbeat + 600 s`. A backstop, not a general age rule. |
@@ -54,8 +54,8 @@ public RPC endpoints. There is no hosted service, no payment, and no signing.
 | `NO_FEED` | This token has no price feed at all. Distinct from a broken feed. |
 | `SOURCE_UNAVAILABLE` | A read failed, or the calendar does not cover the date. Always blocking; never a default value. |
 
-Every verdict also carries `inputs` — the block, the feed answer and age, the pause flags, the
-multiplier values — so a caller can see what the answer was based on instead of trusting the label.
+Every verdict also carries `inputs`: the block, the feed answer and age, the pause flags, the
+multiplier values. A caller can see what the answer was based on instead of trusting the label.
 
 ## What it does **not** check
 
@@ -63,16 +63,18 @@ multiplier values — so a caller can see what the answer was based on instead o
 
 There is an `experimental` path (`POOL_CHECK_ENABLED: true` in the policy) that compares the feed
 against a Uniswap pool price. It is off by default, and it warns when you turn it on, because the
-pool reference did not survive our own 30-day replay:
+pool reference is unverified:
 
-- pool selection looked ahead — it used a pool that did not exist yet on **81,257 of 302,400**
+- pool selection looked ahead: it used a pool that did not exist yet on **81,257 of 302,400**
   calibration samples;
 - several of the "deepest" pools execute no trades, so a price from them means little;
-- judged against the pool, 3.9% of samples were "materially wrong"; judged against the feed's own
-  next update, **none** were. On those same samples the pool was the outlier.
+- on the evaluation window the two references disagreed. Judged against the pool, 3.9% of samples
+  were "materially wrong"; judged against the feed's own next update, none were. That disagreement
+  does not settle which reference is right, and the feed is not a traded price either.
 
-Treat `POOL_DEVIATION` as noise until that reference is repaired. The library's default answer does
-not depend on it.
+The experimental path applies the **existence filter** only. It does not apply the activity or
+liquidity qualification, so a pool can be selectable without ever having traded. Treat
+`POOL_DEVIATION` as noise until that reference is repaired. The default answer does not depend on it.
 
 **Also not checked, and this matters:** trading halts, per-account or per-address restrictions,
 whether a venue will accept *your* trade, corporate-action status, and anything off-chain. The
@@ -89,17 +91,18 @@ deliberate:
 **Two changes that affect behaviour**
 
 1. **The pool check is gated off.** `policy.ts` gains `POOL_CHECK_ENABLED` (default `false`) and
-   `rules.ts` wraps the pool block in it. The replay always evaluated the pool rules; the library does
-   not, unless you turn them on. With it off, the pool reads are not merely ignored — they are not
-   made (`referenceMode: "none"` skips them in `snapshot.ts`).
+   `rules.ts` wraps the pool block in it. The replay always evaluated the pool rules; the library
+   does not, unless you turn them on. With it off, the pool reads are not merely ignored: they are
+   not made (`referenceMode: "none"` skips them in `snapshot.ts`).
 2. **Two files are new.** `src/index.ts` is the public entry point (`check()`, token resolution,
-   calendar guard, latest-block read) and `src/sessions-guard.ts` refuses dates outside the calendar's
-   coverage. The replay had neither: it drove `src/` directly and its window was inside coverage.
+   calendar guard, latest-block read) and `src/sessions-guard.ts` refuses dates outside the
+   calendar's coverage. The replay had neither: it drove `src/` directly and its window was inside
+   coverage.
 
 **Documentation-only changes, verified by diff**
 
 `blocks.ts`, `rpc.ts`, `sessions.ts`, `snapshot.ts`, `types.ts`, and the comment lines in `rules.ts`
-and `policy.ts` differ only in wording — internal review shorthand was replaced with neutral
+and `policy.ts` differ only in wording: internal review shorthand was replaced with neutral
 language. `chain.ts` and `pools.ts` are byte-identical. No threshold, comparison, selector or branch
 was changed.
 
@@ -110,7 +113,7 @@ guard. The replay folder has no equivalent: it had no test suite at all.
 
 **What the replay has that the library does not**
 
-`replay/f4ebac0/replay/run.ts` — the sampler. It walks 8,640 five-minute steps, pins a historical
+`replay/f4ebac0/replay/run.ts`, the sampler. It walks 8,640 five-minute steps, pins a historical
 block per sample, batches 35 tokens into one multicall, and appends a row per token. The library
 answers one token at the current head, because a caller asking "is this safe right now" is not
 running a 30-day study.
@@ -125,14 +128,14 @@ npm test          # 49 assertions, no network
 npm run mcp       # start the MCP server on stdio
 ```
 
-Node 18+. The library is TypeScript source (`.ts`) and is meant to be run through `tsx` or bundled;
-it is not pre-compiled in v0.1.
+Node 18+. The library is TypeScript source (`.ts`) and is meant to be run through `tsx` or bundled.
+It is not pre-compiled in v0.1.
 
 ### Calendar coverage guard
 
 The market calendar (`calendar/nyse-holidays.json`) covers **2026 and 2027**. If the library is
 asked about a block timestamp outside that range, it returns `SOURCE_UNAVAILABLE` with a detail
-naming the covered years — it will not answer from a calendar that does not know that year's
+naming the covered years. It will not answer from a calendar that does not know that year's
 holidays. This is deliberate: a stale calendar is otherwise invisible, and a missed holiday looks
 exactly like a normal trading session.
 
@@ -140,27 +143,29 @@ Update the file and the guard follows automatically. `coverageYears()` reports w
 
 ## Data provenance
 
-- **Token and feed addresses:** `data/feed-map.json` — 35 tokens, each with its feed, token address,
+- **Token and feed addresses:** `data/feed-map.json`, 35 tokens, each with its feed, token address,
   decimals, deviation and heartbeat, plus the source for that row. Fetched 2026-10-15.
 - **33 of the 35** appear in Chainlink's published Robinhood listing. **SGOV and USAR do not.**
   Their feed contracts exist on-chain and were verified directly; their deviation and heartbeat are
   **assumed** to match the listing's uniform 0.5% / 86,400 s, and are marked as assumed in the map.
-- **Market calendar:** NYSE holidays and early closes, 2026–2027, from NYSE's published schedule
+- **Market calendar:** NYSE holidays and early closes, 2026-2027, from NYSE's published schedule
   with a secondary cross-check. See `calendar/nyse-holidays.json` for sources and fetch time.
 
 ## Status, maintenance and limitations
 
-- **Version 0.1.0.** The rules here are the ones that survived a 30-day historical replay. The
-  headline result of that replay was **STOP** — see [`report/report.md`](report/report.md). That is
-  a result about *these rules against these feeds in that month*, and it is the reason this is
+- **Version 0.1.0.** The rules here are the rules that were run against a 30-day historical replay.
+  The headline result of that replay was **STOP**: see [`report/report.md`](report/report.md). That
+  is a result about *these rules against these feeds in that month*, and it is the reason this is
   published as a free library rather than a service.
 - **Maintained by** [@Flookerton](https://github.com/Flookerton) on GitHub. Issues and pull requests
   are the right channel. There is no SLA and no support commitment.
-- **Token list date:** 2026-10-15. **Calendar coverage:** 2026–2027, fetched 2026-10-15. Both are
-  data files and both will go stale; the calendar has a guard, the token list does not (a token
-  added after that date will be reported as `NO_FEED`).
-- **Volatility, not safety.** A `safe: true` verdict means no *data condition* was detected. It says
+- **Token list date:** 2026-10-15. **Calendar coverage:** 2026-2027, fetched 2026-10-15. Both are
+  data files and both will go stale. The calendar has a guard; the token list does not, so a token
+  added after that date will be reported as `NO_FEED`.
+- **What `safe: true` means.** It means no *data condition* was detected at that block. It says
   nothing about whether the asset is a good idea, and nothing about price direction.
+- **The library is not a market model.** It reads the chain and applies rules. If the feed itself is
+  smoothed or frozen, the verdict describes the feed, not the market.
 
 ## Naming
 
