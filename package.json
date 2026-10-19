@@ -1,0 +1,16 @@
+{
+  "name": "stock-token-check",
+  "version": "0.1.0",
+  "description": "Check whether a Robinhood Stock Token's Chainlink price feed is safe to use right now. Reports data conditions only; not investment advice.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "tsx test/run-tests.ts",
+    "mcp": "tsx mcp/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": { "viem": "^2.57.7" },
+  "devDependencies": { "@types/node": "^26.6.5", "tsx": "^4.23.15", "typescript": "^7.0.2" }
+}

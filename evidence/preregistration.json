@@ -1,0 +1,350 @@
+{
+ "$comment": "FROZEN BEFORE THE EVALUATION RUN. Every threshold here is calibrated ONLY on the calibration window (2026-08-16..2026-09-14) and must not be re-derived from evaluation results. sha256 of this file goes into replay/meta.json. Pre-approved by the 2026-10-18T02:51:14Z note; the run refuses to start unless this file is committed (working rule 11).",
+ "window": "evaluation",
+ "generatedUtc": "2026-10-18T03:36:07.506032+00:00",
+ "universe": {
+  "tokens": [
+   "AAPL",
+   "AMD",
+   "AMZN",
+   "ASML",
+   "BABA",
+   "CLSK",
+   "COIN",
+   "CRCL",
+   "CRWV",
+   "DELL",
+   "EWY",
+   "GME",
+   "GOOGL",
+   "INTC",
+   "IONQ",
+   "META",
+   "MSFT",
+   "MSTR",
+   "MU",
+   "NBIS",
+   "NVDA",
+   "ORCL",
+   "PLTR",
+   "QQQ",
+   "RGTI",
+   "RKLB",
+   "SGOV",
+   "SLV",
+   "SNDK",
+   "SPCX",
+   "SPY",
+   "TSLA",
+   "TSM",
+   "USAR",
+   "USO"
+  ],
+  "count": 35,
+  "frozen": true,
+  "source": "replay/feed-map.json",
+  "note": "35 tokens. SGOV and USAR exist on-chain but are not in Chainlink's published listing; their parameters are marked ASSUMED below. The spec's section 3.1 says '33 feed-backed tokens'; the frozen run universe is 35 \u2014 the orchestrator's note governs."
+ },
+ "windows": {
+  "calibration": "2026-08-16T00:00:00Z .. 2026-09-14T23:59:59Z",
+  "evaluation": "2026-09-15T00:00:00Z .. 2026-10-14T23:59:59Z",
+  "sampleStepSec": 300,
+  "nSampleTimes": 8640,
+  "labelTail": {
+   "definition": "Read feed values only, for up to 96 hours after 2026-10-14 (or up to now, if that is sooner). They label the last samples' next update.",
+   "scored": false,
+   "tailEndUtc": "2026-10-18T23:59:59Z"
+  }
+ },
+ "section2_goNoGo": {
+  "goNoGoUsesPoolIndependentMeasuresOnly": true,
+  "reason": "The pool reference is still under repair (look-ahead, silent pass, dead pools).",
+  "stopIfBoth": {
+   "materially_wrong_share_lt": 0.005,
+   "unsafe_excluding_market_closed_share_lt": 0.02
+  },
+  "otherwise": "GO",
+  "unsafeCodes": [
+   "SEQUENCER_STALE",
+   "ORACLE_PAUSED",
+   "MULTIPLIER_PENDING",
+   "FEED_STALE_OPEN",
+   "MARKET_CLOSED",
+   "FEED_AWAITING_REOPEN_UPDATE"
+  ],
+  "unsafeCodesStatedAddition": [
+   "FEED_AWAITING_REOPEN_UPDATE"
+  ],
+  "materiallyWrong": "unsafe (per A and B) AND |next-feed deviation| over 300 bps (decision C, next-feed only)",
+  "coverage": "shown beside every share; unlabeled rows excluded from the denominator (R1)",
+  "referenceUnavailableAndSourceUnavailable": "never count as unsafe (R2); their counts are reported",
+  "labelTail": "read feed values only, for up to 96 hours after 2026-10-14; tail samples are not scored",
+  "poolBasedResults": "go in a separate section titled 'Secondary, not preregistered: pool reference under repair'; not used for go/no-go",
+  "headline": "next-feed-only, as the pool-independent figure; noted as a floor because the first update after a reopen can be smoothed"
+ },
+ "decisions": {
+  "A": {
+   "statement": "'unsafe' means the section 3.3 list only",
+   "countedAsUnsafe": [
+    "SEQUENCER_STALE",
+    "ORACLE_PAUSED",
+    "MULTIPLIER_PENDING",
+    "FEED_STALE_OPEN",
+    "MARKET_CLOSED"
+   ],
+   "notCountedAsUnsafe": {
+    "POOL_DEVIATION": "belongs to 'materially wrong', the other half of the rule; counting it in both halves double-counts it",
+    "REFERENCE_UNAVAILABLE": "R2",
+    "SOURCE_UNAVAILABLE": "our own read failure, not a hazard to the agent; reported separately"
+   }
+  },
+  "B": {
+   "statement": "add FEED_AWAITING_REOPEN_UPDATE to the unsafe list as a stated addition",
+   "countedAsUnsafe": [
+    "FEED_AWAITING_REOPEN_UPDATE"
+   ],
+   "shownSeparatelyFromTheOriginalList": true
+  },
+  "C": {
+   "statement": "a second reference for 'materially wrong': the feed's next update",
+   "reference": "ref_feed_next = the feed value at the first feed update after the sample's block",
+   "deviation": "(served price - next feed value) / next feed value, in bps, signed",
+   "materiallyWrong": "unsafe (per A and B) AND (qualified-pool deviation over 300 bps OR next-feed deviation over 300 bps)",
+   "unlabeled": "if the next update falls outside the evaluation window there is no ref_feed_next; coverage printed beside the share, as R1 requires",
+   "pointInTime": "the label uses later data by design because it is ground truth; the verdict and every rule input use only data at or before the sample's block",
+   "reportThreeVersions": [
+    "pool only",
+    "next-feed only",
+    "either"
+   ],
+   "goNoGoUses": "next-feed only (the pool-independent, stricter figure)",
+   "alsoReport": "the distribution of time from each sample to its next update, by session"
+  },
+  "R1": "the materially-wrong share counts only rows with a usable reference; coverage printed beside",
+  "R2": "REFERENCE_UNAVAILABLE and SOURCE_UNAVAILABLE never count as unsafe; their counts are reported"
+ },
+ "thresholds": {
+  "SEQUENCER_STALE_SEC": {
+   "value": 60,
+   "provisional": true,
+   "source": "provisional. No stall observed in the calibration window (max zoomed inter-block gap at the sampling resolution); 60 s is the conservative bound. Inferred from L2 block production; L1 blob-posting delays do NOT count."
+  },
+  "FEED_HEARTBEAT_SEC": {
+   "perFeed": {
+    "AAPL": 86400,
+    "AMD": 86400,
+    "AMZN": 86400,
+    "ASML": 86400,
+    "BABA": 86400,
+    "CLSK": 86400,
+    "COIN": 86400,
+    "CRCL": 86400,
+    "CRWV": 86400,
+    "DELL": 86400,
+    "EWY": 86400,
+    "GME": 86400,
+    "GOOGL": 86400,
+    "INTC": 86400,
+    "IONQ": 86400,
+    "META": 86400,
+    "MSFT": 86400,
+    "MSTR": 86400,
+    "MU": 86400,
+    "NBIS": 86400,
+    "NVDA": 86400,
+    "ORCL": 86400,
+    "PLTR": 86400,
+    "QQQ": 86400,
+    "RGTI": 86400,
+    "RKLB": 86400,
+    "SLV": 86400,
+    "SNDK": 86400,
+    "SPCX": 86400,
+    "SPY": 86400,
+    "TSLA": 86400,
+    "TSM": 86400,
+    "USO": 86400,
+    "SGOV": 86400,
+    "USAR": 86400
+   },
+   "uniform": 86400,
+   "source": "Chainlink listing, per feed. SGOV and USAR: ASSUMED (see .assumedFeeds)."
+  },
+  "FEED_HEARTBEAT_GRACE_SEC": {
+   "value": 600,
+   "source": "FEED_STALE_OPEN fires at heartbeat + 600 s (this value)."
+  },
+  "FEED_STALE_OPEN": {
+   "definition": "market session open AND (now - feed.updatedAt) > FEED_HEARTBEAT_SEC + FEED_HEARTBEAT_GRACE_SEC",
+   "source": "note section 3: 'FEED_STALE_OPEN at heartbeat + 600 s'"
+  },
+  "FEED_DEVIATION_BPS": {
+   "perFeed": {
+    "AAPL": 50,
+    "AMD": 50,
+    "AMZN": 50,
+    "ASML": 50,
+    "BABA": 50,
+    "CLSK": 50,
+    "COIN": 50,
+    "CRCL": 50,
+    "CRWV": 50,
+    "DELL": 50,
+    "EWY": 50,
+    "GME": 50,
+    "GOOGL": 50,
+    "INTC": 50,
+    "IONQ": 50,
+    "META": 50,
+    "MSFT": 50,
+    "MSTR": 50,
+    "MU": 50,
+    "NBIS": 50,
+    "NVDA": 50,
+    "ORCL": 50,
+    "PLTR": 50,
+    "QQQ": 50,
+    "RGTI": 50,
+    "RKLB": 50,
+    "SLV": 50,
+    "SNDK": 50,
+    "SPCX": 50,
+    "SPY": 50,
+    "TSLA": 50,
+    "TSM": 50,
+    "USO": 50,
+    "SGOV": 50,
+    "USAR": 50
+   },
+   "uniform": 50,
+   "source": "Chainlink listing, per feed (0.5%). SGOV and USAR: ASSUMED."
+  },
+  "FEED_DIVERGENCE_BPS": {
+   "value": 100,
+   "source": "2x Chainlink's declared deviation threshold (50 bps). Used only by FEED_DIVERGES_FROM_MARKET, which is a live-only rule and not tested by this replay."
+  },
+  "MULTIPLIER_MATERIAL_BPS": {
+   "value": 50,
+   "source": "orchestrator item 4; same scale as deviation"
+  },
+  "MULTIPLIER_BLOCK_WINDOW_SEC": {
+   "value": 3600,
+   "source": "spec default"
+  },
+  "POOL_DEVIATION_BLOCK_BPS": {
+   "value": 300,
+   "source": "spec default, regular/pre/post"
+  },
+  "POOL_DEVIATION_WARN_BPS": {
+   "value": 100,
+   "source": "spec default"
+  },
+  "POOL_TWAP_SEC": {
+   "value": 1800,
+   "source": "spec default"
+  },
+  "POOL_MIN_LIQUIDITY_USD": {
+   "value": 50000,
+   "source": "spec default"
+  },
+  "API_MAX_AGE_SEC": {
+   "value": 60,
+   "source": "spec default"
+  },
+  "ATTESTATION_TTL_SEC": {
+   "value": 60,
+   "source": "spec default"
+  }
+ },
+ "assumedFeeds": [
+  "SGOV",
+  "USAR"
+ ],
+ "sessionLabels": {
+  "module": "src/sessions.ts",
+  "generator": "replay/sessions-label.ts",
+  "rule": "working rule 10 \u2014 session labels are CALLED from src/sessions.ts, never re-implemented. The labels used by scoring come from replay/out/session-labels.csv, produced by replay/sessions-label.ts against src/sessions.ts at this commit.",
+  "commit": "161ea4ca76d563cb66841f9fd06c42d7aa86ada8"
+ },
+ "readFailures": {
+  "policy": "A failed read is recorded as null, counted, and coded SOURCE_UNAVAILABLE \u2014 never a default value and never a value (working rule 2).",
+  "countedIn": "replay/meta.json and the run summary (readFailures, readFailureTotal)",
+  "calibrationObservation": {
+   "sampleReadFailures": 6,
+   "readFailureTotal": 251211,
+   "note": "In the calibration run every pool read failure came from a pool that did not exist at the block (look-ahead), not from a real outage. The pool reference is under repair; these do not affect the pool-independent go/no-go."
+  }
+ },
+ "dropped": {
+  "multiplierWarn24h": {
+   "code": "MULTIPLIER_PENDING_SOON",
+   "statement": "the 24-hour on-chain multiplier warn is DROPPED. It fires from a present-tense on-chain value (effectiveAt within 24 h) and cannot be replayed point-in-time. It is not in the unsafe list and not in the materially-wrong definition."
+  }
+ },
+ "stopRule": {
+  "stopIfBoth": {
+   "materially_wrong_share_lt": 0.005,
+   "unsafe_excluding_market_closed_share_lt": 0.02
+  },
+  "otherwise": "GO",
+  "codesCountedAsUnsafe": [
+   "SEQUENCER_STALE",
+   "ORACLE_PAUSED",
+   "MULTIPLIER_PENDING",
+   "FEED_STALE_OPEN",
+   "MARKET_CLOSED",
+   "FEED_AWAITING_REOPEN_UPDATE"
+  ],
+  "codesExcludedFromUnsafeCount": [
+   "POOL_DEVIATION",
+   "REFERENCE_UNAVAILABLE",
+   "SOURCE_UNAVAILABLE",
+   "POOL_DEVIATION_MINOR",
+   "POOL_THIN",
+   "CAPABILITIES_UNKNOWN"
+  ],
+  "coverageRule": "computed over samples with a usable reference only; coverage printed alongside",
+  "reportBothNote": "the headline is pool-independent (next-feed only); pool-based figures are reported separately and clearly labelled as not preregistered",
+  "rulesTheReplayCannotTest": [
+   {
+    "input": "/corporate-actions status",
+    "rule": "CORP_ACTION_IN_PROGRESS"
+   },
+   {
+    "input": "/prices isTradingHalt",
+    "rule": "TRADING_HALT"
+   },
+   {
+    "input": "/assets tradingCapabilities",
+    "rules": [
+     "SESSION_NOT_TRADABLE",
+     "CAPABILITIES_UNKNOWN"
+    ]
+   },
+   {
+    "input": "/assets currentMultiplier",
+    "rule": "MULTIPLIER_MISMATCH"
+   },
+   {
+    "input": "/prices mid x currentMultiplier",
+    "rule": "FEED_DIVERGES_FROM_MARKET"
+   },
+   {
+    "input": "Robinhood sequencer websocket",
+    "rule": "SEQUENCER_STALE (live signal only; the replay infers from block production)"
+   },
+   {
+    "input": "venue blocklist view",
+    "rule": "VENUE_BLOCKED (registry address still unverified)"
+   }
+  ]
+ },
+ "integrity": {
+  "commit": "161ea4ca76d563cb66841f9fd06c42d7aa86ada8",
+  "commitShort": "161ea4c",
+  "branch": "master",
+  "errorsSwallowed": 0,
+  "nothingChangedAfterEvaluationRead": "TRUE. At the time this file was written the evaluation window (2026-09-15 .. 2026-10-14) had not been read. All thresholds, definitions and decisions come from the calibration window. This file is committed before the evaluation run starts.",
+  "runMustRecordCommit": "The evaluation run refuses to start from uncommitted code and records its commit hash in replay/meta.json (working rule 11)."
+ }
+}
