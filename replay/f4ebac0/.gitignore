@@ -1,0 +1,6 @@
+node_modules/
+replay/cache/
+replay/out/
+replay/meta.json
+replay/*.summary.json
+*.log

@@ -1,0 +1,39 @@
+{
+  "source": "https://www.nyse.com/markets/hours-calendars",
+  "sourceSecondary": "https://www.fidelity.com/learning-center/smart-money/stock-market-holidays",
+  "fetchedUtc": "2026-10-15T19:40:00Z",
+  "timezone": "America/New_York",
+  "coverage": "2026 and 2027, as required by spec v1.1 §5.4",
+  "note": "Full-day closures are taken from NYSE's own Holidays & Trading Hours table and are high-confidence. Early-close days carry a 'confidence' field: the 2026 dates are corroborated by Fidelity's published table; the 2027 early closes are inferred from NYSE's footnote markers and must be re-confirmed against NYSE's footnotes before shipping. No early-close day falls inside either replay window (calibration Aug 16 - Sep 14 2026; evaluation Sep 15 - Oct 14 2026), so this does not affect Milestone 1. The only holiday inside either window is Labor Day, Monday 2026-09-07.",
+  "fullDayClosures": [
+    { "date": "2026-01-01", "weekday": "Thursday",  "holiday": "New Year's Day" },
+    { "date": "2026-01-19", "weekday": "Monday",    "holiday": "Martin Luther King, Jr. Day" },
+    { "date": "2026-02-16", "weekday": "Monday",    "holiday": "Washington's Birthday" },
+    { "date": "2026-04-03", "weekday": "Friday",    "holiday": "Good Friday" },
+    { "date": "2026-05-25", "weekday": "Monday",    "holiday": "Memorial Day" },
+    { "date": "2026-06-19", "weekday": "Friday",    "holiday": "Juneteenth National Independence Day" },
+    { "date": "2026-07-03", "weekday": "Friday",    "holiday": "Independence Day (observed)" },
+    { "date": "2026-09-07", "weekday": "Monday",    "holiday": "Labor Day" },
+    { "date": "2026-11-26", "weekday": "Thursday",  "holiday": "Thanksgiving Day" },
+    { "date": "2026-12-25", "weekday": "Friday",    "holiday": "Christmas Day" },
+
+    { "date": "2027-01-01", "weekday": "Friday",    "holiday": "New Year's Day" },
+    { "date": "2027-01-18", "weekday": "Monday",    "holiday": "Martin Luther King, Jr. Day" },
+    { "date": "2027-02-15", "weekday": "Monday",    "holiday": "Washington's Birthday" },
+    { "date": "2027-03-26", "weekday": "Friday",    "holiday": "Good Friday" },
+    { "date": "2027-05-31", "weekday": "Monday",    "holiday": "Memorial Day" },
+    { "date": "2027-06-18", "weekday": "Friday",    "holiday": "Juneteenth National Independence Day (observed)" },
+    { "date": "2027-07-05", "weekday": "Monday",    "holiday": "Independence Day (observed)" },
+    { "date": "2027-09-06", "weekday": "Monday",    "holiday": "Labor Day" },
+    { "date": "2027-11-25", "weekday": "Thursday",  "holiday": "Thanksgiving Day" },
+    { "date": "2027-12-24", "weekday": "Friday",    "holiday": "Christmas Day (observed)" }
+  ],
+  "earlyCloses": [
+    { "date": "2026-07-02", "weekday": "Thursday", "close": "13:00", "holiday": "Day before Independence Day (observed)", "confidence": "medium" },
+    { "date": "2026-11-27", "weekday": "Friday",   "close": "13:00", "holiday": "Day after Thanksgiving", "confidence": "high" },
+    { "date": "2026-12-24", "weekday": "Thursday", "close": "13:00", "holiday": "Christmas Eve", "confidence": "high" },
+
+    { "date": "2027-11-26", "weekday": "Friday",   "close": "13:00", "holiday": "Day after Thanksgiving", "confidence": "medium" },
+    { "date": "2027-12-23", "weekday": "Thursday", "close": "13:00", "holiday": "Day before Christmas (observed)", "confidence": "low" }
+  ]
+}

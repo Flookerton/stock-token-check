@@ -87,6 +87,10 @@ looked like data.
 
 No threshold, definition or line of measurement code changed after the window was first read.
 
+*On wording:* `preregistration.json` is published byte-identical to the frozen file, and it refers to
+the project's reviewer as the "orchestrator". That is the review role the decisions came from — not a
+service, a system, or a person's name.
+
 ### Definitions
 
 A sample is **unsafe** if any of `SEQUENCER_STALE`, `ORACLE_PAUSED`, `MULTIPLIER_PENDING`,
@@ -253,6 +257,15 @@ behind it.
   cannot see: halts, account restrictions, venue rules.
 - **The calendar is data.** It covers 2026–2027 and the library refuses to answer outside that range,
   but it still needs updating.
+- **A failed multiplier read could have passed silently.** The released library's test suite caught
+  this class of error, so it is worth stating what it meant for this run. It was **not** present in
+  the code that produced `evaluation.csv`: `src/rules.ts` at `f4ebac0` already treated a null
+  `uiMultiplier`, `newUIMultiplier` or `effectiveAt` as `SOURCE_UNAVAILABLE` (added earlier, in
+  `b84074b`). In the CSV, **3,010 rows — 86 sample times × 35 tokens — have all three reads blank and
+  are coded `SOURCE_UNAVAILABLE`.** Had the check been missing, those rows would have carried *no code
+  at all* instead of a false "nothing staged". Either way they are not unsafe, so **no share changes**:
+  materially wrong stays 0.000% and unsafe excluding `MARKET_CLOSED` stays 0.017%. The difference would
+  have been visibility, not the result — 3,010 rows quietly passing as if they had been checked.
 
 ---
 

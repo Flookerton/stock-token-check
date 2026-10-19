@@ -79,6 +79,42 @@ whether a venue will accept *your* trade, corporate-action status, and anything 
 replay could not test these either; they are named in the public report under "Rules the replay
 cannot test".
 
+## How the library differs from the replay code
+
+`replay/f4ebac0/` is the **exact** code that produced `evaluation.csv` (commit `f4ebac0`), copied
+with `git archive`, unmodified. It is there so the result can be rebuilt and hashed rather than
+taken on trust. The library in `src/` is derived from it, and the differences are small and
+deliberate:
+
+**Two changes that affect behaviour**
+
+1. **The pool check is gated off.** `policy.ts` gains `POOL_CHECK_ENABLED` (default `false`) and
+   `rules.ts` wraps the pool block in it. The replay always evaluated the pool rules; the library does
+   not, unless you turn them on. With it off, the pool reads are not merely ignored — they are not
+   made (`referenceMode: "none"` skips them in `snapshot.ts`).
+2. **Two files are new.** `src/index.ts` is the public entry point (`check()`, token resolution,
+   calendar guard, latest-block read) and `src/sessions-guard.ts` refuses dates outside the calendar's
+   coverage. The replay had neither: it drove `src/` directly and its window was inside coverage.
+
+**Documentation-only changes, verified by diff**
+
+`blocks.ts`, `rpc.ts`, `sessions.ts`, `snapshot.ts`, `types.ts`, and the comment lines in `rules.ts`
+and `policy.ts` differ only in wording — internal review shorthand was replaced with neutral
+language. `chain.ts` and `pools.ts` are byte-identical. No threshold, comparison, selector or branch
+was changed.
+
+**What the library adds outside `src/`**
+
+`mcp/server.ts` (the stdio tool), `test/run-tests.ts` (49 assertions), and the calendar-coverage
+guard. The replay folder has no equivalent: it had no test suite at all.
+
+**What the replay has that the library does not**
+
+`replay/f4ebac0/replay/run.ts` — the sampler. It walks 8,640 five-minute steps, pins a historical
+block per sample, batches 35 tokens into one multicall, and appends a row per token. The library
+answers one token at the current head, because a caller asking "is this safe right now" is not
+running a 30-day study.
+
 ## Installation and use
 
 ```bash
