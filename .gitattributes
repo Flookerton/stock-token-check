@@ -1,9 +1,18 @@
 # Byte-exact evidence files.
 #
-# evidence/preregistration.json is an evidence artifact, not source. Its SHA-256 is attested inside
-# evidence/meta.json and quoted in the published report, and it was frozen with CRLF line endings.
-# With core.autocrlf=true, git rewrites it to LF when committing and back to CRLF when checking out,
-# so a clone on macOS or Linux would hash it differently and the published hash would not verify.
-# `-text` disables every end-of-line conversion for this path: the bytes are stored and checked out
-# exactly as they are, on every platform.
+# evidence/preregistration.json and evidence/meta.json are evidence artifacts, not source. Their
+# SHA-256 values are recorded in evidence/EVIDENCE-MANIFEST.md and published as release assets, so a
+# checkout that rewrites their line endings hashes differently from the published value and the
+# verification fails on that platform.
+#
+# The two were frozen with different endings, so `-text` (no end-of-line conversion on commit or
+# checkout) keeps each exactly as published:
+#
+#   evidence/preregistration.json   CRLF   sha256 50e4adde...
+#   evidence/meta.json              LF     sha256 5a0ea059...
+#
+# Both directions of the problem are real here. With core.autocrlf=true, preregistration.json is
+# rewritten to LF when committed, and meta.json is rewritten to CRLF when checked out. Both files are
+# attested by hash, so both must be stored and checked out exactly as they are, on every platform.
 evidence/preregistration.json -text
+evidence/meta.json -text
