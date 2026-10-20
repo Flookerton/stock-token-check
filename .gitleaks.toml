@@ -1,15 +1,18 @@
 # gitleaks configuration.
 #
-# The generic-api-key rule flags any high-entropy hex string. Public contract addresses are exactly
-# that, and this repository is largely a list of them, so the rule fires on data meant to be public.
-# The allowlist is deliberately narrow: it applies only to the token/feed map file and only to a
-# full 40-hex-digit 0x address. Everything else is still scanned.
+# The default generic-api-key rule flags any high-entropy hex string. Public contract
+# addresses are exactly that, and this repository is largely a list of them, so the
+# default rule fires on data that is meant to be public.
+#
+# The allowlist below is deliberately narrow in the only way that matters: it permits
+# the 40-hex-digit 0x address shape and nothing else. It is NOT scoped to any file.
+# gitleaks treats allowlist entries as OR, so adding a `paths` entry here would exempt
+# every line of that file — broader than intended. The regex is the only exemption.
 
 [extend]
 useDefault = true
 
 [allowlist]
-description = "Public contract addresses in the token/feed map"
-paths = ['''data/feed-map\.json''']
+description = "Public 0x contract addresses (40 hex digits), repository-wide"
 regexTarget = "match"
 regexes = ['''0x[0-9a-fA-F]{40}''']
