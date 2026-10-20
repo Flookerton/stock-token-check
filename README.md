@@ -1,5 +1,7 @@
 # stock-token-check
 
+Short version: [`report/SUMMARY.md`](report/SUMMARY.md). Full report: [`report/report.md`](report/report.md).
+
 **Is this Stock Token's price safe to use right now?**
 
 A small TypeScript library and a local agent tool that report whether a Robinhood Stock Token's
