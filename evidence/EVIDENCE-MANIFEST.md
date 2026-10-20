@@ -10,7 +10,7 @@ hashes and exits non-zero on any mismatch.
 |---|---:|---|
 | `calibration.csv` | 109.8 MB | `72063102439e5f23ef25af128a1713b96954910e07cf77c5cdc56e58067b06db` |
 | `evaluation.csv` | 113.4 MB | `343a5b5aafc535072a0bec4e338d500e78a8c9e5dc38801c6f6430c5cb758e10` |
-| `preregistration.json` | 11,359 B | `50e4adde53e019c9e39c2e4a3d63c9232ca6134940e530dcf7e2ef7a12657fc3` |
+| `preregistration.json` | 11,715 B | `50e4adde53e019c9e39c2e4a3d63c9232ca6134940e530dcf7e2ef7a12657fc3` |
 | `meta.json` | 2,938 B | `5a0ea059425e4734ec2bb79d9caa2c815012fa906ee62f7fa9815f86f843cf36` |
 
 ## What each file is
