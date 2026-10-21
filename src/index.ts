@@ -23,7 +23,9 @@ import {
 } from "./snapshot.ts";
 import { evaluate } from "./rules.ts";
 import { DEFAULT_POLICY, type Policy } from "./policy.ts";
-import { configureCache, getBlock } from "./rpc.ts";
+import {
+  configureCache, configureEndpoints, getBlock, resolveReqPerSec, resolveRpcUrls, RpcConfigError,
+} from "./rpc.ts";
 import type { Purpose, Verdict } from "./types.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -44,9 +46,21 @@ export interface CheckOptions {
   policy?: Partial<Policy>;
   /** Where to keep the RPC response cache. Defaults to a temp directory. */
   cacheDir?: string;
-  /** Requests per second against the archive endpoint. Default 2.5. */
+  /**
+   * Requests per second, shared across the endpoint pool. Precedence: this option, then
+   * STOCK_CHECK_RPS, then 2.5. Do not raise it against the public defaults.
+   */
   reqPerSec?: number;
+  /**
+   * Your own RPC URLs, used instead of the public defaults for every call and rotated in order.
+   * Precedence: this option, then STOCK_CHECK_RPC_URLS (comma-separated), then the public defaults.
+   * Each must be https:// (http:// only for localhost or 127.0.0.1) and must serve chain 4663.
+   * A URL is never written to the cache, logs or errors; it appears as `custom-1`, `custom-2`, ...
+   */
+  rpcUrls?: string[];
 }
+
+export const VERSION = "0.1.1";
 
 export interface CheckResult {
   verdict: Verdict;
@@ -156,7 +170,10 @@ export async function check(
   const policy: Policy = { ...DEFAULT_POLICY, ...(opts.policy ?? {}) };
   const feeds = loadFeeds();
   const cal = calendar();
-  configureCache(opts.cacheDir ?? join(tmpdir(), "stock-token-check-cache"), opts.reqPerSec ?? 2.5);
+  // An invalid setting throws here (RpcConfigError): it is never a verdict, and never a silent
+  // fall back to the public defaults.
+  configureCache(opts.cacheDir ?? join(tmpdir(), "stock-token-check-cache"), resolveReqPerSec(opts.reqPerSec));
+  configureEndpoints(resolveRpcUrls(opts.rpcUrls));
 
   if (policy.POOL_CHECK_ENABLED && !WARNED_POOLS) {
     WARNED_POOLS = true;
@@ -175,7 +192,18 @@ export async function check(
     return emptyUnavailable(String((e as Error).message), tokenOrSymbol, purpose, policy);
   }
 
-  const block = await getBlock("latest");
+  // A read that fails (endpoints refusing, rate limits, timeouts, network) is SOURCE_UNAVAILABLE:
+  // no answer, never a filled-in value. Only a configuration error propagates, because a wrong
+  // setting (for example a URL on another chain) must never produce a verdict at all.
+  let block: Awaited<ReturnType<typeof getBlock>>;
+  try {
+    block = await getBlock("latest");
+  } catch (e) {
+    if (e instanceof RpcConfigError) throw e;
+    const v = verdictUnavailable(entry.symbol, entry.token, purpose, policy,
+      `could not read the chain head: ${(e as Error).message}`);
+    return { verdict: v, inputs: emptyInputs(), meta: metaOf(policy) };
+  }
   if (!block) {
     const v = verdictUnavailable(entry.symbol, entry.token, purpose, policy,
       "could not read the chain head");
@@ -218,7 +246,22 @@ export async function check(
     extraTwapWindows: [],
   };
 
-  const { snapshot } = await readSnapshot(input);
+  let snapshot: Awaited<ReturnType<typeof readSnapshot>>["snapshot"];
+  try {
+    ({ snapshot } = await readSnapshot(input));
+  } catch (e) {
+    if (e instanceof RpcConfigError) throw e;
+    const v = verdictUnavailable(entry.symbol, entry.token, purpose, policy,
+      `could not read the chain at block ${block.number}: ${(e as Error).message}`);
+    return {
+      verdict: v,
+      inputs: { ...emptyInputs(), blockNumber: block.number, blockTime: block.timestamp,
+                blockTimeIso: new Date(block.timestamp * 1000).toISOString(),
+                session: info.session, feedMode: feedMode(info.session),
+                calendarCoverage: coverageLabel(cal) },
+      meta: metaOf(policy),
+    };
+  }
   const verdict = evaluate(snapshot, policy);
   const feedAge = snapshot.feed.updatedAt !== null ? block.timestamp - snapshot.feed.updatedAt : null;
 
@@ -249,7 +292,7 @@ export async function check(
 function metaOf(policy: Policy): CheckResult["meta"] {
   return {
     library: "stock-token-check",
-    version: "0.1.0",
+    version: VERSION,
     policyId: policy.policyId,
     poolCheckEnabled: policy.POOL_CHECK_ENABLED,
     readFailures: readFailureCounts(),
@@ -281,5 +324,6 @@ function emptyUnavailable(detail: string, tokenOrSymbol: string, purpose: Purpos
 
 export { coverageYears, coverageLabel, calendarCovers } from "./sessions-guard.ts";
 export { DEFAULT_POLICY } from "./policy.ts";
+export { RpcConfigError, RpcUnavailableError } from "./rpc.ts";
 export type { Policy } from "./policy.ts";
 export type { Verdict, Purpose, ReasonCode, Reason } from "./types.ts";

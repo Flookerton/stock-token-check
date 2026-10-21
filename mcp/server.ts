@@ -3,7 +3,7 @@
  *
  * Exposes one tool, `check(token, purpose)`, which returns the verdict, the reasons and the raw
  * inputs. No payments, no signing, no hosted service: it runs on the caller's machine and talks to
- * public RPC endpoints.
+ * public RPC endpoints by default (STOCK_CHECK_RPC_URLS selects your own; see README).
  *
  * Protocol: JSON-RPC 2.0, one message per line, on stdin/stdout (the MCP stdio transport).
  * No SDK dependency on purpose — the surface is three methods and a dependency would be larger
@@ -15,11 +15,11 @@
 
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
-import { check, tokens, coverageLabel, loadFeeds } from "../src/index.ts";
+import { check, tokens, coverageLabel, loadFeeds, VERSION } from "../src/index.ts";
 import type { Purpose } from "../src/types.ts";
 
 const PROTOCOL_VERSION = "2024-11-05";
-const SERVER = { name: "stock-token-check", version: "0.1.0" };
+const SERVER = { name: "stock-token-check", version: VERSION };
 
 const TOOL = {
   name: "check",

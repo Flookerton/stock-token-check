@@ -37,7 +37,65 @@ Or as a local agent tool (MCP over stdio):
 ```
 
 The server exposes one tool, `check(token, purpose)`. It runs on your machine, over stdio, against
-public RPC endpoints. There is no hosted service, no payment, and no signing.
+public RPC endpoints by default. There is no hosted service, no payment, and no signing.
+
+## RPC endpoints and rate limits
+
+**By default it uses free public endpoints.** You need no account, key or payment.
+
+**Public endpoints limit how fast you can query them.** The tool limits itself to 2.5 requests per
+second, and when an endpoint pushes back (HTTP 403, 408, 425, 429 or 5xx) it waits and retries,
+rotating through the pool. Bursts can still trigger a temporary block.
+
+**If the endpoints keep refusing, the check returns `SOURCE_UNAVAILABLE`.** It never fills in a
+price and never passes a token it could not read. Being throttled means no answer, not a wrong
+answer. Each check reads the newest block from the chain. Only reads pinned to a block number are
+cached, so a check never answers from an old block.
+
+**Using your own endpoint.** Two optional environment variables:
+
+| Variable | Meaning |
+|---|---|
+| `STOCK_CHECK_RPC_URLS` | Comma-separated URLs. If set, they replace the whole default pool for every call and are rotated in order. If unset or empty, the public defaults are used. |
+| `STOCK_CHECK_RPS` | Requests per second, shared across the pool. Default `2.5`. If you use the public defaults, do not raise it. |
+
+```bash
+export STOCK_CHECK_RPC_URLS="https://YOUR-PROVIDER/YOUR-KEY"
+export STOCK_CHECK_RPS=10
+npm run mcp
+```
+
+```jsonc
+// client config
+{
+  "mcpServers": {
+    "stock-token-check": {
+      "command": "npx",
+      "args": ["tsx", "/path/to/stock-token-check/mcp/server.ts"],
+      "env": {
+        "STOCK_CHECK_RPC_URLS": "https://YOUR-PROVIDER/YOUR-KEY",
+        "STOCK_CHECK_RPS": "10"
+      }
+    }
+  }
+}
+```
+
+From the library, `check(token, purpose, { rpcUrls: [...], reqPerSec: 10 })` does the same. An
+option takes precedence over its variable, and a variable over the default.
+
+- **Your endpoint must serve Robinhood Chain (4663).** The first time a URL is used, the tool asks it
+  for its chain ID. If the answer is not 4663, the check refuses with an error naming the URL's
+  position in the list (for example "URL 2 is not Robinhood Chain") and gives no verdict.
+- **For the replay, an endpoint must also serve historical state.** Note that `replay/f4ebac0/` is
+  the frozen original code. It does not read these variables and always uses the public archive
+  pool. If you adapt it to your own endpoint, that endpoint must be an archive node.
+- **Each URL must start with `https://`.** Plain `http://` is accepted only for `localhost` or
+  `127.0.0.1`. An invalid setting, such as a bad scheme or an empty entry, is an error. The tool does
+  not quietly fall back to the defaults.
+- **Your URL is never written to the cache or the logs.** Cache records, logs and error messages
+  call your endpoints `custom-1`, `custom-2` and so on. The built-in public endpoints are written in
+  full.
 
 ---
 
@@ -90,7 +148,7 @@ with `git archive`, unmodified. It is there so the result can be rebuilt and has
 taken on trust. The library in `src/` is derived from it, and the differences are small and
 deliberate:
 
-**Two changes that affect behaviour**
+**Changes that affect behaviour**
 
 1. **The pool check is gated off.** `policy.ts` gains `POOL_CHECK_ENABLED` (default `false`) and
    `rules.ts` wraps the pool block in it. The replay always evaluated the pool rules; the library
@@ -100,17 +158,25 @@ deliberate:
    calendar guard, latest-block read) and `src/sessions-guard.ts` refuses dates outside the
    calendar's coverage. The replay had neither: it drove `src/` directly and its window was inside
    coverage.
+3. **`rpc.ts` changes in v0.1.1** (none of them affect the replay, which only read pinned blocks):
+   - requests about the moving head (`"latest"`, `"pending"`, `"safe"`, `"finalized"`) are no longer
+     cached. In v0.1.0 the first head read was cached forever, so later checks re-used that old
+     block and its verdict;
+   - when the endpoints keep failing, `rpc.ts` raises `RpcUnavailableError`, which `check()` returns
+     as `SOURCE_UNAVAILABLE`. In v0.1.0 `check()` threw instead;
+   - the endpoint pool is configurable (`STOCK_CHECK_RPC_URLS` / `rpcUrls`). Custom URLs are checked
+     for chain 4663 and are recorded only as `custom-N`.
 
 **Documentation-only changes, verified by diff**
 
-`blocks.ts`, `rpc.ts`, `sessions.ts`, `snapshot.ts`, `types.ts`, and the comment lines in `rules.ts`
-and `policy.ts` differ only in wording: internal review shorthand was replaced with neutral
-language. `chain.ts` and `pools.ts` are byte-identical. No threshold, comparison, selector or branch
-was changed.
+`blocks.ts`, `sessions.ts`, `snapshot.ts`, `types.ts`, and the comment lines in `rules.ts` and
+`policy.ts` differ only in wording: internal review shorthand was replaced with neutral language.
+`chain.ts` differs only by a comment marking `RPC_LATEST` unused, and `pools.ts` is byte-identical.
+Apart from `rpc.ts` above, no threshold, comparison, selector or branch was changed.
 
 **What the library adds outside `src/`**
 
-`mcp/server.ts` (the stdio tool), `test/run-tests.ts` (49 assertions), and the calendar-coverage
+`mcp/server.ts` (the stdio tool), `test/run-tests.ts` (86 assertions), and the calendar-coverage
 guard. The replay folder has no equivalent: it had no test suite at all.
 
 **What the replay has that the library does not**
@@ -126,7 +192,7 @@ running a 30-day study.
 git clone <this repo>
 cd stock-token-check
 npm install
-npm test          # 49 assertions, no network
+npm test          # 86 assertions, no network
 npm run mcp       # start the MCP server on stdio
 ```
 
@@ -155,8 +221,8 @@ Update the file and the guard follows automatically. `coverageYears()` reports w
 
 ## Status, maintenance and limitations
 
-- **Version 0.1.0.** The rules here are the rules that were run against a 30-day historical replay.
-  The headline result of that replay was **STOP**: see [`report/report.md`](report/report.md). That
+- **Version 0.1.1** ([changelog](CHANGELOG.md)). The rules here are the rules that were run against
+  a 30-day historical replay. The headline result of that replay was **STOP**: see [`report/report.md`](report/report.md). That
   is a result about *these rules against these feeds in that month*, and it is the reason this is
   published as a free library rather than a service.
 - **Maintained by** [@Flookerton](https://github.com/Flookerton) on GitHub. Issues and pull requests

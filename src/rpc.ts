@@ -16,10 +16,15 @@ import { createHash } from "node:crypto";
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { encodeFunctionData, decodeFunctionResult, type Hex } from "viem";
-import { MULTICALL3, MULTICALL3_ABI, RPC_ARCHIVE_POOL, RPC_LATEST } from "./chain.ts";
+import { CHAIN_ID, MULTICALL3, MULTICALL3_ABI, RPC_ARCHIVE_POOL } from "./chain.ts";
 
 export interface RpcEndpointOpts {
-  /** Use the archive pool (historical state). Default: the fast public endpoint. */
+  /**
+   * Ignored. Every call goes to the configured pool: the public archive pool by default, or the
+   * caller's own URLs. Before v0.1.1 this was documented as choosing "the fast public endpoint",
+   * but it defaulted to true and no caller passed false, so the archive pool was always used.
+   * That tested behaviour is kept; the option stays only so existing callers still compile.
+   */
   archive?: boolean;
   /** Throw instead of fetching on a cache miss. */
   offline?: boolean;
@@ -47,9 +52,173 @@ let CACHE_DIR = "replay/cache";
 let REQ_PER_SEC = 2.5;
 
 export function configureCache(dir: string, reqPerSec = 2.5): void {
+  if (!Number.isFinite(reqPerSec) || reqPerSec <= 0) {
+    throw new RpcConfigError(`requests per second must be a positive number, got ${reqPerSec}`);
+  }
   CACHE_DIR = dir;
   REQ_PER_SEC = reqPerSec;
   mkdirSync(dir, { recursive: true });
+}
+
+// --- endpoints ----------------------------------------------------------
+
+/**
+ * One endpoint in the pool. `label` is the only name that may be written anywhere (cache records,
+ * logs, error messages). For a built-in public endpoint it is the URL itself; for a caller's own URL
+ * it is `custom-1`, `custom-2`, ... because many providers put the API key in the URL.
+ */
+interface Endpoint {
+  url: string;
+  label: string;
+  custom: boolean;
+}
+
+const DEFAULT_ENDPOINTS: Endpoint[] = RPC_ARCHIVE_POOL.map((url) => ({ url, label: url, custom: false }));
+
+let ENDPOINTS: Endpoint[] = DEFAULT_ENDPOINTS;
+/** Custom URLs whose chain ID has been checked against CHAIN_ID. The built-in ones were verified by hand. */
+const verified = new Set<string>();
+
+/** A setting is wrong. Never turned into a verdict, and never a silent fall back to the defaults. */
+export class RpcConfigError extends Error {}
+
+/**
+ * Every endpoint refused or failed: rate limits, timeouts, server faults, network errors. The caller
+ * has no answer, which `check()` reports as SOURCE_UNAVAILABLE, never as a value.
+ */
+export class RpcUnavailableError extends Error {}
+
+const LOCAL_HTTP = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i;
+
+/**
+ * Validate a list of the caller's own RPC URLs. Positions in errors are 1-based, as a person counts
+ * them, and the URL itself is never echoed: it may contain a key.
+ */
+export function validateRpcUrls(urls: readonly string[]): string[] {
+  return urls.map((raw, i) => {
+    const url = raw.trim();
+    if (url === "") throw new RpcConfigError(`RPC URL ${i + 1} is empty`);
+    if (!/^https:\/\//i.test(url) && !LOCAL_HTTP.test(url)) {
+      throw new RpcConfigError(
+        `RPC URL ${i + 1} must start with https:// (plain http is allowed only for localhost or 127.0.0.1)`);
+    }
+    try {
+      new URL(url);
+    } catch {
+      throw new RpcConfigError(`RPC URL ${i + 1} is not a valid URL`);
+    }
+    return url;
+  });
+}
+
+/**
+ * Which URLs to use. Order of precedence: the `rpcUrls` option, then STOCK_CHECK_RPC_URLS, then the
+ * public defaults (null). An unset or blank variable, or an empty option list, means the defaults;
+ * anything else must validate in full.
+ */
+export function resolveRpcUrls(
+  option: readonly string[] | undefined,
+  env: string | undefined = process.env.STOCK_CHECK_RPC_URLS,
+): string[] | null {
+  if (option !== undefined && option.length > 0) return validateRpcUrls(option);
+  if (env === undefined || env.trim() === "") return null;
+  return validateRpcUrls(env.split(","));
+}
+
+/** Requests per second: the option, then STOCK_CHECK_RPS, then 2.5. */
+export function resolveReqPerSec(
+  option: number | undefined,
+  env: string | undefined = process.env.STOCK_CHECK_RPS,
+): number {
+  if (option !== undefined) return option;
+  if (env === undefined || env.trim() === "") return 2.5;
+  const n = Number(env.trim());
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new RpcConfigError(`STOCK_CHECK_RPS must be a positive number, got "${env.trim()}"`);
+  }
+  return n;
+}
+
+/** Use these URLs for every call, rotated in order; null restores the public defaults. */
+export function configureEndpoints(urls: readonly string[] | null): void {
+  const next = urls === null
+    ? DEFAULT_ENDPOINTS
+    : validateRpcUrls(urls).map((url, i) => ({ url, label: `custom-${i + 1}`, custom: true }));
+  const same = next.length === ENDPOINTS.length && next.every((e, i) => e.url === ENDPOINTS[i].url);
+  if (same) return;
+  ENDPOINTS = next;
+  hostCursor = 0;
+}
+
+/** The labels of the endpoints in use, in rotation order. Safe to print. */
+export function endpointLabels(): string[] {
+  return ENDPOINTS.map((e) => e.label);
+}
+
+/** Replace every custom URL in `text` with its label, so no message can carry a key. */
+export function redact(text: string): string {
+  let out = text;
+  for (const e of ENDPOINTS) if (e.custom) out = out.split(e.url).join(e.label);
+  return out;
+}
+
+/**
+ * Before the first request to a custom pool, ask each URL for its chain ID. A wrong chain must never
+ * produce a verdict, so a mismatch is a configuration error naming the position in the list.
+ */
+async function verifyChain(): Promise<void> {
+  for (let i = 0; i < ENDPOINTS.length; i++) {
+    const e = ENDPOINTS[i];
+    if (!e.custom || verified.has(e.url)) continue;
+    let got: unknown = undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await pace();
+      stats.requests += 1;
+      try {
+        const res = await fetch(e.url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", method: "eth_chainId", params: [], id: 1 }),
+        });
+        if (res.ok) {
+          const body = (await res.json()) as { result?: unknown };
+          got = body.result ?? null;
+          break;
+        }
+      } catch {
+        // Network error: counted as a retry below, and fatal after the last attempt.
+      }
+      stats.retries += 1;
+      await backoff(attempt);
+    }
+    if (got === undefined) {
+      throw new RpcUnavailableError(`could not read the chain ID of RPC URL ${i + 1} (${e.label})`);
+    }
+    const id = typeof got === "string" && /^0x[0-9a-f]+$/i.test(got) ? Number(BigInt(got)) : null;
+    if (id !== CHAIN_ID) {
+      throw new RpcConfigError(
+        `URL ${i + 1} is not Robinhood Chain: eth_chainId returned ${id ?? "no chain ID"}, ` +
+        `expected ${CHAIN_ID}. Check STOCK_CHECK_RPC_URLS or rpcUrls.`);
+    }
+    verified.add(e.url);
+  }
+}
+
+/**
+ * A request about the moving head of the chain ("latest", "pending", ...) has a different answer
+ * every block. Caching it froze the head: every later check re-used the first block it ever saw,
+ * and its verdict with it. Only requests pinned to a block number are cached.
+ */
+const MOVING_TAGS = new Set(["latest", "pending", "safe", "finalized"]);
+export function isCacheable(method: string, params: unknown): boolean {
+  if (method === "eth_blockNumber" || method === "eth_chainId" || method === "eth_gasPrice") return false;
+  const moving = (v: unknown): boolean => {
+    if (typeof v === "string") return MOVING_TAGS.has(v.toLowerCase());
+    if (Array.isArray(v)) return v.some(moving);
+    if (v && typeof v === "object") return Object.values(v).some(moving);
+    return false;
+  };
+  return !moving(params);
 }
 
 export function cacheDir(): string {
@@ -83,12 +252,10 @@ async function pace(): Promise<void> {
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 }
 
-function nextEndpoint(archive: boolean): string {
-  if (!archive) return RPC_LATEST;
-  const pool = RPC_ARCHIVE_POOL;
-  const url = pool[hostCursor % pool.length];
+function nextEndpoint(): Endpoint {
+  const e = ENDPOINTS[hostCursor % ENDPOINTS.length];
   hostCursor += 1;
-  return url;
+  return e;
 }
 
 // --- core call ----------------------------------------------------------
@@ -97,17 +264,33 @@ function nextEndpoint(archive: boolean): string {
  * Perform one JSON-RPC call, through the cache.
  *
  * A cached response is returned without touching the network, so an offline re-run
- * reproduces the previous run exactly.
+ * reproduces the previous run exactly. Requests about the moving head are never cached
+ * (see isCacheable).
  */
 export async function rpc(
   method: string,
   params: unknown[],
   opts: RpcEndpointOpts = {},
 ): Promise<unknown> {
+  try {
+    return await rpcInner(method, params, opts);
+  } catch (err) {
+    // Whatever went wrong, no message leaves this module with a custom URL in it.
+    if (err instanceof Error) err.message = redact(err.message);
+    throw err;
+  }
+}
+
+async function rpcInner(
+  method: string,
+  params: unknown[],
+  opts: RpcEndpointOpts,
+): Promise<unknown> {
   const key = cacheKey(method, params);
   const path = cachePath(key);
+  const cacheable = isCacheable(method, params);
 
-  if (existsSync(path)) {
+  if (cacheable && existsSync(path)) {
     stats.hits += 1;
     const rec = JSON.parse(readFileSync(path, "utf8"));
     if (rec.error) throw new RpcError(method, rec.error);
@@ -115,23 +298,24 @@ export async function rpc(
   }
 
   if (opts.offline || process.env.REPLAY_OFFLINE === "1") {
-    throw new Error(
+    throw new RpcUnavailableError(
       `offline cache miss for ${method} (key ${key.slice(0, 12)}…) — the cache is incomplete`,
     );
   }
 
   stats.misses += 1;
-  const archive = opts.archive ?? true;
+  await verifyChain();
   const maxAttempts = 6;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     await pace();
-    const endpoint = nextEndpoint(archive);
+    const ep = nextEndpoint();
+    const endpoint = ep.label; // the only name that is ever recorded
     stats.requests += 1;
 
     let res: Response;
     try {
-      res = await fetch(endpoint, {
+      res = await fetch(ep.url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
@@ -163,7 +347,8 @@ export async function rpc(
       stats.retries += 1;
       const looksTransient = /not available|unknown state|no state|try again|timeout|pruned/i.test(text);
       if (!looksTransient && attempt >= 1) {
-        throw new Error(`RPC ${method} HTTP 400 (not a state-availability problem): ${text.slice(0, 200)}`);
+        throw new RpcUnavailableError(
+          `RPC ${method} HTTP 400 from ${endpoint} (not a state-availability problem): ${redact(text).slice(0, 200)}`);
       }
       await new Promise((r) => setTimeout(r, backoffMs(attempt)));
       continue;
@@ -175,7 +360,7 @@ export async function rpc(
         await new Promise((r) => setTimeout(r, backoffMs(attempt)));
         continue;
       }
-      throw new Error(`RPC ${method} HTTP ${res.status} after ${attempt + 1} attempts`);
+      throw new RpcUnavailableError(`RPC ${method} HTTP ${res.status} from ${endpoint} after ${attempt + 1} attempts`);
     }
 
     const body = (await res.json()) as { result?: unknown; error?: unknown };
@@ -200,15 +385,16 @@ export async function rpc(
       }
 
       // A revert IS deterministic — cache it so replaying is reproducible.
-      writeRecord(path, { key, method, params, error: body.error, endpoint, fetchedAt: isoNow() });
+      if (cacheable) writeRecord(path, { key, method, params, error: body.error, endpoint, fetchedAt: isoNow() });
       throw new RpcError(method, body.error);
     }
 
-    writeRecord(path, { key, method, params, result: body.result, endpoint, fetchedAt: isoNow() });
+    if (cacheable) writeRecord(path, { key, method, params, result: body.result, endpoint, fetchedAt: isoNow() });
     return body.result;
   }
 
-  throw new Error(`RPC ${method} exhausted ${maxAttempts} attempts (endpoint kept rate-limiting)`);
+  throw new RpcUnavailableError(
+    `RPC ${method} exhausted ${maxAttempts} attempts (the endpoints kept refusing or failing)`);
 }
 
 function backoffMs(attempt: number): number {

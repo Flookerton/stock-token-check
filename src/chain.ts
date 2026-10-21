@@ -9,7 +9,11 @@ import { parseAbi } from "viem";
 
 export const CHAIN_ID = 4663;
 
-/** Robinhood's public RPC. NOTE: serves `latest` fine, but has NO historical state. */
+/**
+ * Robinhood's public RPC. NOTE: serves `latest` fine, but has NO historical state.
+ * UNUSED: no call is routed here. Every call, live checks included, uses the archive pool below
+ * (or the caller's own URLs). Kept as a verified fact, not as a route.
+ */
 export const RPC_LATEST = "https://rpc.mainnet.chain.robinhood.com";
 
 /**
